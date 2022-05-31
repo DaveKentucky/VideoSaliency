@@ -1,6 +1,19 @@
 import torch
 from torch import nn
-import torch.nn.functional as nn_func
+
+
+class VideoSaliencyModel(nn.Module):
+    def __init__(self):
+        super(VideoSaliencyModel, self).__init__()
+
+        self.encoder = S3D()
+        self.decoder = DecoderConv()
+
+    def forward(self, x):
+        [y0, y1, y2, y3] = self.encoder(x)
+
+        return self.decoder(y0, y1, y2, y3)
+
 
 ###################
 # Encoder network #
