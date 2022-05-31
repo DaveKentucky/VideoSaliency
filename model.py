@@ -2,38 +2,70 @@ import torch
 from torch import nn
 import torch.nn.functional as nn_func
 
+###################
+# Encoder network #
+###################
+
 
 class S3D(nn.Module):
-    def __init__(self, num_class):
+    def __init__(self):
         super(S3D, self).__init__()
-        self.base = nn.Sequential(
+        self.base1 = nn.Sequential(
             SepConv3d(3, 64, kernel_size=7, stride=2, padding=3),
             nn.MaxPool3d(kernel_size=(1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1)),
             BasicConv3d(64, 64, kernel_size=1, stride=1),
             SepConv3d(64, 192, kernel_size=3, stride=1, padding=1),
-            nn.MaxPool3d(kernel_size=(1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1)),
+        )
+
+        self.max_p2 = nn.MaxPool3d(kernel_size=(1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1))
+
+        self.base2 = nn.Sequential(
             Mixed3b(),
             Mixed3c(),
-            nn.MaxPool3d(kernel_size=(3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1)),
+        )
+
+        self.max_p3 = nn.MaxPool3d(kernel_size=(3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1))
+
+        self.base3 = nn.Sequential(
             Mixed4b(),
             Mixed4c(),
             Mixed4d(),
             Mixed4e(),
             Mixed4f(),
-            nn.MaxPool3d(kernel_size=(2, 2, 2), stride=(2, 2, 2), padding=(0, 0, 0)),
+        )
+
+        self.max_t4 = nn.MaxPool3d(kernel_size=(2, 1, 1), stride=(2, 1, 1), padding=(0, 0, 0))
+        self.max_p4 = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2), padding=(0, 0, 0))
+
+        self.base4 = nn.Sequential(
             Mixed5b(),
             Mixed5c(),
         )
-        self.fc = nn.Sequential(nn.Conv3d(1024, num_class, kernel_size=1, stride=1, bias=True),)
 
     def forward(self, x):
-        y = self.base(x)
-        y = nn_func.avg_pool3d(y, (2, y.size(3), y.size(4)), stride=1)
-        y = self.fc(y)
-        y = y.view(y.size(0), y.size(1), y.size(2))
-        logits = torch.mean(y, 2)
+        # print('input', x.shape)
+        y3 = self.base1(x)
+        # print('base1', y3.shape)
 
-        return logits
+        y = self.max_p2(y3)
+        # print('max_p2', y.shape)
+
+        y2 = self.base2(y)
+        # print('base2', y2.shape)
+
+        y = self.max_p3(y2)
+        # print('max_p3', y.shape)
+
+        y1 = self.base3(y)
+        # print('base3', y1.shape)
+
+        y = self.max_t4(y1)
+        y = self.max_p4(y)
+        # print('max_t4_p4', y.shape)
+
+        y0 = self.base4(y)
+
+        return [y0, y1, y2, y3]
 
 
 class BasicConv3d(nn.Module):
@@ -341,3 +373,73 @@ class Mixed5c(nn.Module):
         x3 = self.branch3(x)
         out = torch.cat((x0, x1, x2, x3), 1)
         return out
+
+###################
+# Decoder network #
+###################
+
+
+class DecoderConv(nn.Module):
+    def __init__(self):
+        super(DecoderConv, self).__init__()
+        self.upsampling = nn.Upsample(scale_factor=(1, 2, 2))
+
+        self.conv1 = nn.Sequential(
+            nn.Conv3d(1024, 832, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 0), bias=False),
+            nn.ReLU(),
+            self.upsampling()
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv3d(832, 480, kernel_size=(3, 3, 3), stride=(3, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            self.upsampling()
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.Conv3d(480, 192, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            self.upsampling()
+        )
+
+        self.conv4 = nn.Sequential(
+            nn.Conv3d(192, 64, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            self.upsampling()
+        )
+
+        self.conv5 = nn.Sequential(
+            nn.Conv3d(64, 32, kernel_size=(2, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            self.upsampling(),
+
+            nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1), bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, y0, y1, y2, y3):
+        z = self.conv1(y0)
+        # print('conv1', z.shape)
+
+        z = torch.cat((z, y1), 2)
+        # print('cat_conv1', z.shape)
+
+        z = self.conv2(z)
+        # print('conv2', z.shape)
+
+        z = torch.cat((z, y2), 2)
+        # print('cat_conv2', z.shape)
+
+        z = self.conv3(z)
+        # print('conv3', z.shape)
+
+        z = torch.cat((z, y3), 2)
+        # print("cat_conv3", z.shape)
+
+        z = self.conv4(z)
+        # print('conv4', z.shape)
+
+        z = z.view(z.size(0), z.size(3), z.size(4))
+        # print('output', z.shape)
+
+        return z
