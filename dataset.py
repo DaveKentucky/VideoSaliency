@@ -1,8 +1,10 @@
 import os
 import numpy as np
 import cv2 as cv
+import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+from PIL import Image
 
 
 class DHF1KDataset(Dataset):
@@ -11,10 +13,14 @@ class DHF1KDataset(Dataset):
         self.len_snippet = len_snippet
         self.video_names = os.listdir(path)
         self.list_num_frame = [len(os.listdir(os.path.join(path, d, 'images'))) for d in self.video_names]
-        self.transform = transforms.Normalize(
-            [0.485, 0.456, 0.406],
-            [0.229, 0.224, 0.225]
-        )
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 384)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                [0.485, 0.456, 0.406],
+                [0.229, 0.224, 0.225]
+            )
+        ])
 
     def __len__(self):
         return len(self.list_num_frame)
@@ -29,10 +35,9 @@ class DHF1KDataset(Dataset):
         clip_annotation = []
 
         for i in range(self.len_snippet):
-            img = cv.imread(os.path.join(path_clip, '%04d.png' % (start_idx + i + 1)))
-            img = cv.resize(img, (384, 224))
+            img = Image.open(os.path.join(path_clip, f'{(start_idx + i + 1):04}.png')).convert('RGB')
 
-            annotation = cv.imread(os.path.join(path_annotation, '%04d.png' % (start_idx + i + 1)), 0)
+            annotation = np.array(Image.open(os.path.join(path_annotation, f'{(start_idx + i + 1):04}.png')).convert('L'))
             annotation = annotation.astype(float)
             annotation = cv.resize(annotation, (384, 224))
             if np.max(annotation) > 1.0:

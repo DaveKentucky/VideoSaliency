@@ -48,7 +48,7 @@ class S3D(nn.Module):
         )
 
         self.max_t4 = nn.MaxPool3d(kernel_size=(2, 1, 1), stride=(2, 1, 1), padding=(0, 0, 0))
-        self.max_p4 = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2), padding=(0, 0, 0))
+        self.max_p4 = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2), padding=(0, 0, 0), return_indices=True)
 
         self.base4 = nn.Sequential(
             Mixed5b(),
@@ -56,27 +56,29 @@ class S3D(nn.Module):
         )
 
     def forward(self, x):
-        # print('input', x.shape)
+        x = torch.permute(x, (1, 2, 0, 3, 4))
+        print('input', x.shape)
         y3 = self.base1(x)
-        # print('base1', y3.shape)
+        print('base1', y3.shape)
 
         y = self.max_p2(y3)
-        # print('max_p2', y.shape)
+        print('max_p2', y.shape)
 
         y2 = self.base2(y)
-        # print('base2', y2.shape)
+        print('base2', y2.shape)
 
         y = self.max_p3(y2)
-        # print('max_p3', y.shape)
+        print('max_p3', y.shape)
 
         y1 = self.base3(y)
-        # print('base3', y1.shape)
+        print('base3', y1.shape)
 
         y = self.max_t4(y1)
-        y = self.max_p4(y)
-        # print('max_t4_p4', y.shape)
+        y, i0 = self.max_p4(y)
+        print('max_t4_p4', y.shape)
 
         y0 = self.base4(y)
+        print('base4', y0.shape)
 
         return [y0, y1, y2, y3]
 
@@ -117,6 +119,7 @@ class SepConv3d(nn.Module):
         self.relu_t = nn.ReLU()
 
     def forward(self, x):
+        # print(x.size())
         x = self.conv_s(x)
         x = self.bn_s(x)
         x = self.relu_s(x)
@@ -400,31 +403,31 @@ class DecoderConv(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv3d(1024, 832, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 0), bias=False),
             nn.ReLU(),
-            self.upsampling()
+            self.upsampling
         )
 
         self.conv2 = nn.Sequential(
             nn.Conv3d(832, 480, kernel_size=(3, 3, 3), stride=(3, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
-            self.upsampling()
+            self.upsampling
         )
 
         self.conv3 = nn.Sequential(
             nn.Conv3d(480, 192, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
-            self.upsampling()
+            self.upsampling
         )
 
         self.conv4 = nn.Sequential(
             nn.Conv3d(192, 64, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
-            self.upsampling()
+            self.upsampling
         )
 
         self.conv5 = nn.Sequential(
             nn.Conv3d(64, 32, kernel_size=(2, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
-            self.upsampling(),
+            self.upsampling,
 
             nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1), bias=False),
             nn.Sigmoid()
@@ -456,3 +459,9 @@ class DecoderConv(nn.Module):
         # print('output', z.shape)
 
         return z
+
+
+if __name__ == '__main__':
+    model = VideoSaliencyModel()
+    x = torch.randn(1, 3, 32, 224, 384)
+    out = model(x)

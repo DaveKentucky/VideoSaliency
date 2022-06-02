@@ -1,12 +1,16 @@
 import argparse
 import os
 import time
+from datetime import timedelta
+from itertools import islice
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-
+from dataset import DHF1KDataset
 from model import VideoSaliencyModel
+from utils import KLDivLoss
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data_path',
@@ -18,7 +22,12 @@ parser.add_argument('--output_path', default='./result', type=str, help='path fo
 
 def main():
     args = parser.parse_args()
+
+    # set constants
     file_weight = './S3D_kinetics400.pt'
+    len_temporal = 32
+    batch_size = 8
+    num_iterations = 200
 
     # set input and output path strings
     path_input = args.train_data_path
@@ -29,7 +38,8 @@ def main():
 
     model = VideoSaliencyModel()
 
-    # todo: load dataset
+    # load dataset
+    train_dataset = DHF1KDataset(path_input, len_temporal)
 
     # load the weight file for encoder network
     if os.path.isfile(file_weight):
@@ -73,6 +83,46 @@ def main():
     model.cuda()
     print('Successfully loaded the model to GPU!')
 
-    # todo: train the model
+    # set parameters for training
+    params = []
+    for key, value in dict(model.named_parameters()).items():
+        if 'conv' in key:
+            params += [{'params': [value], 'key':key+'(new)'}]
+        else:
+            params += [{'params': [value], 'lr':0.001, 'key':key}]
+
+    optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=2e-7)
+    criterion = KLDivLoss()
+
+    # train the model
     model.train()
-    loader = DataLoader()
+    loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    i, step = 0, 0
+    loss_sum = 0
+    start_time = time.time()
+
+    for clip, annotation in islice(loader, num_iterations):
+        with torch.set_grad_enabled(True):
+            output = model(clip.cuda())
+            loss = criterion(output, annotation.cuda())
+
+        loss_sum += loss.detach().item()
+        loss.backward()
+        optimizer.step()
+        # optimizer.zero_grad()
+
+        if (i + 1) % 10 == 0:
+            step += 1
+            print(f'iteration: [{step}/{num_iterations}], loss: {loss_sum / 10}, '
+                  f'time: {timedelta(seconds=int(time.time() - start_time))}', flush=True)
+            loss_sum = 0
+
+            if step % 10 == 0:
+                torch.save(model.state_dict(), os.path.join(path_output, f'iter{step:03}.pt'))
+
+        i += 1
+
+
+if __name__ == '__main__':
+    main()
