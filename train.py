@@ -9,8 +9,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from dataset import DHF1KDataset
+from loss import VideoSaliencyLoss
 from model import VideoSaliencyModel
-from utils import KLDivLoss
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data_path',
@@ -27,7 +27,7 @@ def main():
     file_weight = './S3D_kinetics400.pt'
     len_temporal = 8
     batch_size = 4
-    num_iterations = 1000
+    epochs = 20
 
     # set input and output path strings
     path_input = args.train_data_path
@@ -94,7 +94,7 @@ def main():
             params += [{'params': [value], 'lr':0.001, 'key':key}]
 
     optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=2e-7)
-    criterion = KLDivLoss()
+    criterion = VideoSaliencyLoss()
 
     # train the model
     model.train()
@@ -102,12 +102,13 @@ def main():
 
     start_time = time.time()
 
-    loss_sum = 0
+    avg_loss, avg_auc, avg_sim = 0, 0, 0
 
-    for i in range(num_iterations):
+    for i in range(epochs):
         for (idx, sample) in enumerate(loader):
             clips = sample[0]
             annotations = sample[1]
+            fixations = sample[2]
             clips = clips.to(device)
             clips = clips.permute((0, 2, 1, 3, 4))
             annotations = annotations.to(device)
@@ -118,23 +119,26 @@ def main():
             # print(annotations.size())
             assert prediction.size() == annotations.size()
 
-            loss = criterion(prediction, annotations)
+            loss, loss_auc, loss_sim = criterion(prediction, annotations, fixations)
             loss.backward()
             optimizer.step()
-            loss_sum += float(loss)
+            avg_loss += loss.item()
+            avg_auc += loss_auc.item()
+            avg_sim += loss_sim.item()
 
-        if (i + 1) % 10 == 0:
-            print(f'iteration: {i}, loss: {loss_sum / 10}, time: {(time.time() - start_time) / 60}')
-            loss_sum = 0
+        print(f'epoch: {i + 1}, loss: {(avg_loss / len(loader)):.3f}, '
+              f'total time: {((time.time() - start_time) / 60):.2f} minutes')
+        avg_loss = 0
 
-    torch.save(model.module.state_dict(), 'trained_model.pt')
+        weights_file = f'model_weights{(i + 1):03}.pt'
+        torch.save(model.module.state_dict(), os.path.join('weights', weights_file))
 
 
     # i, step = 0, 0
     # loss_sum = 0
     # start_time = time.time()
     #
-    # for clip, annotation in islice(loader, num_iterations):
+    # for clip, annotation in islice(loader, epochs):
     #     with torch.set_grad_enabled(True):
     #         output = model(clip.cuda())
     #         print(f'output: {output.shape}, gt: {annotation.shape}')
@@ -147,7 +151,7 @@ def main():
     #
     #     if (i + 1) % 10 == 0:
     #         step += 1
-    #         print(f'iteration: [{step}/{num_iterations}], loss: {loss_sum / 10}, '
+    #         print(f'iteration: [{step}/{epochs}], loss: {loss_sum / 10}, '
     #               f'time: {timedelta(seconds=int(time.time() - start_time))}', flush=True)
     #         loss_sum = 0
     #

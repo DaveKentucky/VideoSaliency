@@ -5,6 +5,37 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
+from scipy.io import loadmat
+
+
+def resize_fixation(fixation, width=384, height=224):
+    """
+    Resizes fixation map.
+
+    :param fixation: fixation map binary matrix (scipy.io.loadmat(mat_file)['I'])
+    :type fixation: numpy.ndarray
+    :param width: desired fixation map width
+    :type width: int
+    :param height: desired fixation map height
+    :type height: int
+    :return: resized fixation matrix
+    :rtype: numpy.ndarray
+    """
+    out = np.zeros((height, width))
+    height_sf = height / fixation.shape[0]  # height scale factor
+    width_sf = width / fixation.shape[1]    # width scale factor
+
+    coords = np.argwhere(fixation)
+    for coord in coords:
+        row = int(np.round(coord[0] * height_sf))
+        col = int(np.round(coord[1] * width_sf))
+        if row == height:
+            r -= 1
+        if col == width:
+            c -= 1
+        out[row, col] = 1
+
+    return out
 
 
 class DHF1KDataset(Dataset):
@@ -31,8 +62,10 @@ class DHF1KDataset(Dataset):
 
         path_clip = os.path.join(self.path, file_name, 'images')
         path_annotation = os.path.join(self.path, file_name, 'maps')
+        path_fixation = os.path.join(self.path, file_name, 'fixation', 'maps')
         clip_img = []
         clip_annotation = []
+        clip_fixation = []
 
         for i in range(self.len_snippet):
             img = Image.open(os.path.join(path_clip, f'{(start_idx + i + 1):04}.png')).convert('RGB')
@@ -43,11 +76,15 @@ class DHF1KDataset(Dataset):
             if np.max(annotation) > 1.0:
                 annotation = annotation / 255.0
 
-            clip_annotation.append(torch.FloatTensor(annotation))
+            fixation = loadmat(os.path.join(path_fixation, f'{(start_idx + i + 1):04}.mat'))['I']
+            fixation = resize_fixation(fixation)
+
             clip_img.append(self.transform(img))
+            clip_annotation.append(torch.FloatTensor(annotation))
+            clip_fixation.append(torch.from_numpy(fixation.copy()))
 
         clip_img = torch.FloatTensor(torch.stack(clip_img, dim=0))
         clip_annotation = torch.FloatTensor(torch.stack(clip_annotation, dim=0))
 
         # print(clip_img.shape)
-        return clip_img, clip_annotation[-1]
+        return clip_img, clip_annotation[-1], clip_fixation[-1]

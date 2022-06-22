@@ -57,28 +57,28 @@ class S3D(nn.Module):
 
     def forward(self, x):
         # x = x.permute(0, 2, 1, 3, 4)
-        print('input', x.shape)
+        # print('input', x.shape)
         y3 = self.base1(x)
-        print('base1', y3.shape)
+        # print('base1', y3.shape)
 
         y = self.max_p2(y3)
-        print('max_p2', y.shape)
+        # print('max_p2', y.shape)
 
         y2 = self.base2(y)
-        print('base2', y2.shape)
+        # print('base2', y2.shape)
 
         y = self.max_p3(y2)
-        print('max_p3', y.shape)
+        # print('max_p3', y.shape)
 
         y1 = self.base3(y)
-        print('base3', y1.shape)
+        # print('base3', y1.shape)
 
         y = self.max_t4(y1)
         y, i0 = self.max_p4(y)
-        print('max_t4_p4', y.shape)
+        # print('max_t4_p4', y.shape)
 
         y0 = self.base4(y)
-        print('base4', y0.shape)
+        # print('base4', y0.shape)
 
         return [y0, y1, y2, y3]
 
@@ -434,28 +434,28 @@ class DecoderConv(nn.Module):
 
     def forward(self, y0, y1, y2, y3):
         z = self.conv1(y0)
-        print('conv1', z.shape)
+        # print('conv1', z.shape)
 
         z = torch.cat((z, y1), 2)
-        print('cat_conv1', z.shape)
+        # print('cat_conv1', z.shape)
 
         z = self.conv2(z)
-        print('conv2', z.shape)
+        # print('conv2', z.shape)
 
         z = torch.cat((z, y2), 2)
-        print('cat_conv2', z.shape)
+        # print('cat_conv2', z.shape)
 
         z = self.conv3(z)
-        print('conv3', z.shape)
+        # print('conv3', z.shape)
 
         z = torch.cat((z, y3), 2)
-        print("cat_conv3", z.shape)
+        # print("cat_conv3", z.shape)
 
         z = self.conv4(z)
-        print('conv4', z.shape)
+        # print('conv4', z.shape)
 
         z = z.view(z.size(0), z.size(3), z.size(4))
-        print('output', z.shape)
+        # print('output', z.shape)
 
         return z
 
