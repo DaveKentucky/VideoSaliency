@@ -46,6 +46,8 @@ class DHF1KDataset(Dataset):
             clip_annotation.append(torch.FloatTensor(annotation))
             clip_img.append(self.transform(img))
 
-            clip_img = torch.FloatTensor(torch.stack(clip_img, dim=0))
-            clip_annotation = torch.FloatTensor(torch.stack(clip_annotation, dim=0))
-            return clip_img, clip_annotation
+        clip_img = torch.FloatTensor(torch.stack(clip_img, dim=0))
+        clip_annotation = torch.FloatTensor(torch.stack(clip_annotation, dim=0))
+
+        # print(clip_img.shape)
+        return clip_img, clip_annotation[-1]

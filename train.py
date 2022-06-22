@@ -25,9 +25,9 @@ def main():
 
     # set constants
     file_weight = './S3D_kinetics400.pt'
-    len_temporal = 32
-    batch_size = 8
-    num_iterations = 200
+    len_temporal = 8
+    batch_size = 4
+    num_iterations = 1000
 
     # set input and output path strings
     path_input = args.train_data_path
@@ -77,10 +77,12 @@ def main():
     # load model to GPU
     if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
         print('CUDA is not available on your device or no compatible GPUs were found.')
-        return
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda')
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
-    model.cuda()
+    model.to(device)
     print('Successfully loaded the model to GPU!')
 
     # set parameters for training
@@ -98,30 +100,61 @@ def main():
     model.train()
     loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    i, step = 0, 0
-    loss_sum = 0
     start_time = time.time()
 
-    for clip, annotation in islice(loader, num_iterations):
-        with torch.set_grad_enabled(True):
-            output = model(clip.cuda())
-            loss = criterion(output, annotation.cuda())
+    loss_sum = 0
 
-        loss_sum += loss.detach().item()
-        loss.backward()
-        optimizer.step()
-        # optimizer.zero_grad()
+    for i in range(num_iterations):
+        for (idx, sample) in enumerate(loader):
+            clips = sample[0]
+            annotations = sample[1]
+            clips = clips.to(device)
+            clips = clips.permute((0, 2, 1, 3, 4))
+            annotations = annotations.to(device)
+            optimizer.zero_grad()
+
+            prediction = model(clips)
+            # print(prediction.size())
+            # print(annotations.size())
+            assert prediction.size() == annotations.size()
+
+            loss = criterion(prediction, annotations)
+            loss.backward()
+            optimizer.step()
+            loss_sum += float(loss)
 
         if (i + 1) % 10 == 0:
-            step += 1
-            print(f'iteration: [{step}/{num_iterations}], loss: {loss_sum / 10}, '
-                  f'time: {timedelta(seconds=int(time.time() - start_time))}', flush=True)
+            print(f'iteration: {i}, loss: {loss_sum / 10}, time: {(time.time() - start_time) / 60}')
             loss_sum = 0
 
-            if step % 10 == 0:
-                torch.save(model.state_dict(), os.path.join(path_output, f'iter{step:03}.pt'))
+    torch.save(model.module.state_dict(), 'trained_model.pt')
 
-        i += 1
+
+    # i, step = 0, 0
+    # loss_sum = 0
+    # start_time = time.time()
+    #
+    # for clip, annotation in islice(loader, num_iterations):
+    #     with torch.set_grad_enabled(True):
+    #         output = model(clip.cuda())
+    #         print(f'output: {output.shape}, gt: {annotation.shape}')
+    #         loss = criterion(output, annotation.cuda())
+    #
+    #     loss_sum += loss.detach().item()
+    #     loss.backward()
+    #     optimizer.step()
+    #     # optimizer.zero_grad()
+    #
+    #     if (i + 1) % 10 == 0:
+    #         step += 1
+    #         print(f'iteration: [{step}/{num_iterations}], loss: {loss_sum / 10}, '
+    #               f'time: {timedelta(seconds=int(time.time() - start_time))}', flush=True)
+    #         loss_sum = 0
+    #
+    #         if step % 10 == 0:
+    #             torch.save(model.state_dict(), os.path.join(path_output, f'iter{step:03}.pt'))
+    #
+    #     i += 1
 
 
 if __name__ == '__main__':

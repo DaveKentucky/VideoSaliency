@@ -56,7 +56,7 @@ class S3D(nn.Module):
         )
 
     def forward(self, x):
-        x = torch.permute(x, (1, 2, 0, 3, 4))
+        # x = x.permute(0, 2, 1, 3, 4)
         print('input', x.shape)
         y3 = self.base1(x)
         print('base1', y3.shape)
@@ -119,7 +119,6 @@ class SepConv3d(nn.Module):
         self.relu_t = nn.ReLU()
 
     def forward(self, x):
-        # print(x.size())
         x = self.conv_s(x)
         x = self.bn_s(x)
         x = self.relu_s(x)
@@ -401,7 +400,7 @@ class DecoderConv(nn.Module):
         self.upsampling = nn.Upsample(scale_factor=(1, 2, 2))
 
         self.conv1 = nn.Sequential(
-            nn.Conv3d(1024, 832, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 0), bias=False),
+            nn.Conv3d(1024, 832, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
             self.upsampling
         )
@@ -419,49 +418,49 @@ class DecoderConv(nn.Module):
         )
 
         self.conv4 = nn.Sequential(
-            nn.Conv3d(192, 64, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
-            nn.ReLU(),
-            self.upsampling
-        )
-
-        self.conv5 = nn.Sequential(
-            nn.Conv3d(64, 32, kernel_size=(2, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.Conv3d(192, 64, kernel_size=(5, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
             self.upsampling,
 
-            nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1), bias=False),
+            nn.Conv3d(64, 32, kernel_size=(1, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            self.upsampling,
+
+            # nn.Conv3d(32, 32, kernel_size=(2, 1, 1), stride=(2, 1, 1), bias=False),
+            # nn.ReLU(),
+            nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1), bias=True),
             nn.Sigmoid()
         )
 
     def forward(self, y0, y1, y2, y3):
         z = self.conv1(y0)
-        # print('conv1', z.shape)
+        print('conv1', z.shape)
 
         z = torch.cat((z, y1), 2)
-        # print('cat_conv1', z.shape)
+        print('cat_conv1', z.shape)
 
         z = self.conv2(z)
-        # print('conv2', z.shape)
+        print('conv2', z.shape)
 
         z = torch.cat((z, y2), 2)
-        # print('cat_conv2', z.shape)
+        print('cat_conv2', z.shape)
 
         z = self.conv3(z)
-        # print('conv3', z.shape)
+        print('conv3', z.shape)
 
         z = torch.cat((z, y3), 2)
-        # print("cat_conv3", z.shape)
+        print("cat_conv3", z.shape)
 
         z = self.conv4(z)
-        # print('conv4', z.shape)
+        print('conv4', z.shape)
 
         z = z.view(z.size(0), z.size(3), z.size(4))
-        # print('output', z.shape)
+        print('output', z.shape)
 
         return z
 
 
 if __name__ == '__main__':
     model = VideoSaliencyModel()
-    x = torch.randn(1, 3, 32, 224, 384)
+    x = torch.randn(4, 3, 8, 224, 384)
     out = model(x)
