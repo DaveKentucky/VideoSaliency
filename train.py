@@ -102,7 +102,7 @@ def main():
 
     start_time = time.time()
 
-    avg_loss, avg_auc, avg_sim = 0, 0, 0
+    avg_loss, avg_auc, avg_sim, avg_nss = 0, 0, 0, 0
 
     for i in range(epochs):
         for (idx, sample) in enumerate(loader):
@@ -119,19 +119,24 @@ def main():
             # print(annotations.size())
             assert prediction.size() == annotations.size()
 
-            loss, loss_auc, loss_sim = criterion(prediction, annotations, fixations)
+            loss, loss_auc, loss_sim, loss_nss = criterion(prediction, annotations, fixations)
             loss.backward()
             optimizer.step()
             avg_loss += loss.item()
             avg_auc += loss_auc.item()
             avg_sim += loss_sim.item()
+            avg_nss += loss_nss.item()
 
-        print(f'epoch: {i + 1}, loss: {(avg_loss / len(loader)):.3f}, '
+        print(f'epoch: {i + 1}\n'
+              f'loss: {(avg_loss / len(loader)):.3f}\n'
+              f'SIM: {(avg_sim / len(loader)):.3f}\n'
+              f'AUC: {(avg_auc / len(loader)):.3f}\n'
+              f'NSS: {(avg_nss / len(loader)):.3f}\n'
               f'total time: {((time.time() - start_time) / 60):.2f} minutes')
         avg_loss = 0
 
         weights_file = f'model_weights{(i + 1):03}.pt'
-        torch.save(model.module.state_dict(), os.path.join('weights', weights_file))
+        torch.save(model.state_dict(), os.path.join('weights', weights_file))
 
 
     # i, step = 0, 0

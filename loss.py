@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 import time
+from cv2.cv2 import resize
 
 
 def normalize(s_map):
@@ -38,17 +39,14 @@ class VideoSaliencyLoss(nn.Module):
         :type gt: torch.Tensor
         :param fix: fixation map
         :type fix: torch.Tensor
-        :return: loss metrics values (loss, AUC-Judd, SIM)
-        :rtype: (torch.Tensor, float, torch.Tensor)
+        :return: loss metrics values (loss, AUC-Judd, SIM, NSS)
+        :rtype: (torch.Tensor, float, torch.Tensor, torch.Tensor)
         """
-        st = time.time()
-        loss_auc = self.auc_Judd(pred, fix, True)
-        print(f'AUC time: {((time.time() - st) / 60):.2f}')
-        st = time.time()
+        loss_auc = self.auc_Judd(pred, fix)
         loss_sim = self.similarity(pred, gt)
-        print(f'SIM time: {((time.time() - st) / 60):.2f}')
-        loss = loss_auc + loss_sim
-        return loss, loss_auc, loss_sim
+        loss_nss = self.nss(pred, gt)
+        loss = loss_auc + loss_sim + loss_nss
+        return loss, loss_auc, loss_sim, loss_nss
 
     def similarity(self, pred, gt):
         """
@@ -93,17 +91,24 @@ class VideoSaliencyLoss(nn.Module):
         :return: AUC-Judd measure value
         :rtype: float
         """
+        pred = pred.cpu()
+        fix = fix.cpu()
+
+        # resize predicted saliency map if the sizes don't match
+        if pred.size() != fix.size():
+            pred = pred.squeeze(0).numpy()
+            pred = torch.FloatTensor(resize(pred, (fix.size(2), fix.size(1)))).unsqueeze(0)
+
+        # get a single frame from video clip data
         if len(pred.size()) == 3:
             pred = pred[0, :, :]
             fix = fix[0, :, :]
-        pred = pred.cpu()
-        fix = fix.cpu()
+
         pred = pred.detach().numpy()
         fix = fix.detach().numpy()
 
         # resize saliency map to fixation map size
         if not np.shape(pred) == np.shape(fix):
-            from cv2.cv2 import resize
             pred = resize(pred, np.shape(fix))
 
         # normalize the saliency map
@@ -153,3 +158,36 @@ class VideoSaliencyLoss(nn.Module):
             plt.show()
 
         return score
+
+    def nss(self, pred, gt):
+        """
+        Calculates Normalized Scanpath Saliency measure (NSS).
+
+        :param pred: predicted saliency map
+        :type pred: torch.Tensor
+        :param gt: ground truth fixation map
+        :type gt: torch.Tensor
+        :return: NSS measure value
+        :rtype: torch.Tensor
+        """
+        # resize predicted saliency map if the sizes don't match
+        if pred.size() != gt.size():
+            pred = pred.cpu()
+            pred = pred.squeeze(0).numpy()
+            pred = torch.FloatTensor(resize(pred, (gt.size(2), gt.size(1)))).unsqueeze(0)
+            pred = pred.cuda()
+            gt = gt.cuda()
+
+        batch_size = pred.size(0)
+        w = pred.size(1)
+        h = pred.size(2)
+
+        pred_mean = torch.mean(pred.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+        pred_std = torch.std(pred.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+
+        eps = 2.2204e-16
+        pred = (pred - pred_mean) / (pred_std + eps)
+
+        pred = torch.sum((pred * gt).view(batch_size, -1), 1)
+        count = torch.sum(gt.view(batch_size, -1), 1)
+        return torch.mean(pred / count)
