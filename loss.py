@@ -7,7 +7,7 @@ from cv2.cv2 import resize
 
 def normalize(s_map):
     """
-    Normalize saliency map for evaluation metrics calculation
+    Normalize saliency map tensor for evaluation metrics calculation
 
     :param s_map: input map (either predicted or ground truth)
     :type s_map: torch.Tensor
@@ -22,6 +22,12 @@ def normalize(s_map):
     max_s_map = torch.max(s_map.view(batch_size, -1), 1)[0].view(batch_size, 1, 1).expand(batch_size, w, h)
 
     norm_s_map = (s_map - min_s_map) / (max_s_map - min_s_map * 1.0)
+    return norm_s_map
+
+
+def normalize_numpy(s_map):
+    # normalize the salience map (as done in MIT code)
+    norm_s_map = (s_map - np.min(s_map)) / ((np.max(s_map) - np.min(s_map)) * 1.0)
     return norm_s_map
 
 
@@ -40,12 +46,16 @@ class VideoSaliencyLoss(nn.Module):
         :param fix: fixation map
         :type fix: torch.Tensor
         :return: loss metrics values (loss, AUC-Judd, SIM, NSS)
-        :rtype: (torch.Tensor, float, torch.Tensor, torch.Tensor)
+        :rtype: (torch.Tensor, float, float, float)
         """
         loss_auc = self.auc_Judd(pred, fix)
+        st = time.time()
         loss_sim = self.similarity(pred, gt)
+        total = time.time() - st
         loss_nss = self.nss(pred, gt)
-        loss = loss_auc + loss_sim + loss_nss
+        print(total / 60)
+        loss = torch.FloatTensor([0.0]).cuda()
+        loss += loss_auc + loss_sim + loss_nss
         return loss, loss_auc, loss_sim, loss_nss
 
     def similarity(self, pred, gt):
@@ -59,25 +69,32 @@ class VideoSaliencyLoss(nn.Module):
         :return: SIM measure value
         :rtype: float
         """
-        batch_size = pred.size(0)
-        w = pred.size(1)
-        h = pred.size(2)
+        pred = pred.cpu().detach().numpy()
+        gt = gt.cpu().detach().numpy()
+        pred = normalize_numpy(pred)
+        gt = normalize_numpy(gt)
 
-        pred = normalize(pred)
-        gt = normalize(gt)
+        pred = pred / (np.sum(pred) * 1.0)
+        gt = gt / (np.sum(gt) * 1.0)
 
-        pred_sum = torch.sum(pred.view(batch_size, -1), 1)
-        pred_expand = pred_sum.view(batch_size, 1, 1).expand(batch_size, w, h)
+        if len(pred.shape) == 3:
+            sim_arr = np.empty(pred.shape[0])
+            for i in range(gt.shape[0]):
+                i_gt = gt[i, :, :].copy()
+                i_pred = pred[i, :, :].copy()
+                sim_arr[i] = self.get_sim(i_pred, i_gt)
 
-        gt_sum = torch.sum(gt.view(batch_size, -1), 1)
-        gt_expand = gt_sum.view(batch_size, 1, 1).expand(batch_size, w, h)
+            return np.mean(sim_arr)
 
-        pred = pred / (pred_expand * 1.0)
-        gt = gt / (gt_expand * 1.0)
+        return self.get_sim(pred, gt)
 
-        pred = pred.view(batch_size, -1)
-        gt = gt.view(batch_size, -1)
-        return torch.mean(torch.sum(torch.min(pred, gt), -1))
+    def get_sim(self, pred, gt):
+        x, y = np.nonzero(gt > 0)
+        sim = 0.0
+        for i in zip(x, y):
+            sim += min(gt[i[0], i[1]], pred[i[0], i[1]])
+
+        return sim
 
     def auc_Judd(self, pred, fix, show_plot=False):
         """
@@ -168,7 +185,7 @@ class VideoSaliencyLoss(nn.Module):
         :param gt: ground truth fixation map
         :type gt: torch.Tensor
         :return: NSS measure value
-        :rtype: torch.Tensor
+        :rtype: float
         """
         # resize predicted saliency map if the sizes don't match
         if pred.size() != gt.size():
@@ -178,16 +195,26 @@ class VideoSaliencyLoss(nn.Module):
             pred = pred.cuda()
             gt = gt.cuda()
 
-        batch_size = pred.size(0)
-        w = pred.size(1)
-        h = pred.size(2)
+        pred = pred.cpu().detach().numpy()
+        gt = gt.cpu().detach().numpy()
+        gt = gt / 255
 
-        pred_mean = torch.mean(pred.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
-        pred_std = torch.std(pred.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+        if len(pred.shape) == 3:
+            nss_arr = np.empty(pred.shape[0])
+            for i in range(gt.shape[0]):
+                i_pred = pred[i, :, :]
+                i_gt = gt[i, :, :]
+                nss_arr[i] = self.get_nss(i_pred, i_gt)
 
-        eps = 2.2204e-16
-        pred = (pred - pred_mean) / (pred_std + eps)
+            return np.mean(nss_arr)
 
-        pred = torch.sum((pred * gt).view(batch_size, -1), 1)
-        count = torch.sum(gt.view(batch_size, -1), 1)
-        return torch.mean(pred / count)
+        return self.get_nss(pred, gt)
+
+    def get_nss(self, pred, gt):
+        x, y = np.nonzero(gt)
+        pred_norm = (pred - np.mean(pred)) / np.std(pred)
+        tmp = []
+        for i in zip(x, y):
+            tmp.append(pred_norm[i[0], i[1]])
+
+        return np.mean(tmp)

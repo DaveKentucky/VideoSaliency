@@ -120,7 +120,7 @@ def main():
             assert prediction.size() == annotations.size()
 
             loss, loss_auc, loss_sim, loss_nss = criterion(prediction, annotations, fixations)
-            loss.backward()
+            # loss.backward()
             optimizer.step()
             avg_loss += loss.item()
             avg_auc += loss_auc.item()
