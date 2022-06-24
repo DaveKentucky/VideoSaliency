@@ -49,12 +49,9 @@ class VideoSaliencyLoss(nn.Module):
         :rtype: (torch.Tensor, float, float, float)
         """
         loss_auc = self.auc_Judd(pred, fix)
-        st = time.time()
         loss_sim = self.similarity(pred, gt)
-        total = time.time() - st
-        loss_nss = self.nss(pred, gt)
-        print(total / 60)
-        loss = torch.FloatTensor([0.0]).cuda()
+        loss_nss = self.nss(pred, fix)
+        loss = torch.FloatTensor([0.0]).cpu()
         loss += loss_auc + loss_sim + loss_nss
         return loss, loss_auc, loss_sim, loss_nss
 
@@ -176,45 +173,45 @@ class VideoSaliencyLoss(nn.Module):
 
         return score
 
-    def nss(self, pred, gt):
+    def nss(self, pred, fix):
         """
         Calculates Normalized Scanpath Saliency measure (NSS).
 
         :param pred: predicted saliency map
         :type pred: torch.Tensor
-        :param gt: ground truth fixation map
-        :type gt: torch.Tensor
+        :param fix: ground truth fixation map
+        :type fix: torch.Tensor
         :return: NSS measure value
         :rtype: float
         """
         # resize predicted saliency map if the sizes don't match
-        if pred.size() != gt.size():
+        if pred.size() != fix.size():
             pred = pred.cpu()
             pred = pred.squeeze(0).numpy()
-            pred = torch.FloatTensor(resize(pred, (gt.size(2), gt.size(1)))).unsqueeze(0)
+            pred = torch.FloatTensor(resize(pred, (fix.size(2), fix.size(1)))).unsqueeze(0)
             pred = pred.cuda()
-            gt = gt.cuda()
+            gt = fix.cuda()
 
         pred = pred.cpu().detach().numpy()
-        gt = gt.cpu().detach().numpy()
-        gt = gt / 255
+        fix = fix.cpu().detach().numpy()
+        # gt = gt / 255
 
         if len(pred.shape) == 3:
             nss_arr = np.empty(pred.shape[0])
-            for i in range(gt.shape[0]):
+            for i in range(fix.shape[0]):
                 i_pred = pred[i, :, :]
-                i_gt = gt[i, :, :]
-                nss_arr[i] = self.get_nss(i_pred, i_gt)
+                i_fix = fix[i, :, :]
+                nss_arr[i] = self.get_nss(i_pred, i_fix)
 
             return np.mean(nss_arr)
 
-        return self.get_nss(pred, gt)
+        return self.get_nss(pred, fix)
 
-    def get_nss(self, pred, gt):
-        x, y = np.nonzero(gt)
+    def get_nss(self, pred, fix):
+        x, y = np.nonzero(fix)
         pred_norm = (pred - np.mean(pred)) / np.std(pred)
-        tmp = []
-        for i in zip(x, y):
-            tmp.append(pred_norm[i[0], i[1]])
+        tmp = np.empty(x.shape[0])
+        for i, val in enumerate(zip(x, y)):
+            tmp[i] = pred_norm[val[0], val[1]]
 
         return np.mean(tmp)
