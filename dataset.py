@@ -7,6 +7,8 @@ from torchvision import transforms
 from PIL import Image
 from scipy.io import loadmat
 
+from utils import transform_torch_image
+
 
 def resize_fixation(fixation, width=384, height=224):
     """
@@ -30,9 +32,9 @@ def resize_fixation(fixation, width=384, height=224):
         row = int(np.round(coord[0] * height_sf))
         col = int(np.round(coord[1] * width_sf))
         if row == height:
-            r -= 1
+            row -= 1
         if col == width:
-            c -= 1
+            col -= 1
         out[row, col] = 1
 
     return out
@@ -44,14 +46,6 @@ class DHF1KDataset(Dataset):
         self.len_snippet = len_snippet
         self.video_names = os.listdir(path)
         self.list_num_frame = [len(os.listdir(os.path.join(path, d, 'images'))) for d in self.video_names]
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 384)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                [0.485, 0.456, 0.406],
-                [0.229, 0.224, 0.225]
-            )
-        ])
 
     def __len__(self):
         return len(self.list_num_frame)
@@ -79,7 +73,7 @@ class DHF1KDataset(Dataset):
             fixation = loadmat(os.path.join(path_fixation, f'{(start_idx + i + 1):04}.mat'))['I']
             fixation = resize_fixation(fixation)
 
-            clip_img.append(self.transform(img))
+            clip_img.append(transform_torch_image(img))
             clip_annotation.append(torch.FloatTensor(annotation))
             clip_fixation.append(torch.from_numpy(fixation.copy()))
 

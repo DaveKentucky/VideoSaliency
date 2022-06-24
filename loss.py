@@ -26,6 +26,14 @@ def normalize(s_map):
 
 
 def normalize_numpy(s_map):
+    """
+    Normalize saliency map numpy array for evaluation metrics calculation
+
+    :param s_map: input map (either predicted or ground truth)
+    :type s_map: numpy.ndarray
+    :return: normalized map
+    :rtype: numpy.ndarray
+    """
     # normalize the salience map (as done in MIT code)
     norm_s_map = (s_map - np.min(s_map)) / ((np.max(s_map) - np.min(s_map)) * 1.0)
     return norm_s_map

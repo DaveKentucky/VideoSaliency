@@ -1,8 +1,6 @@
 import argparse
 import os
 import time
-from datetime import timedelta
-from itertools import islice
 
 import torch
 from torch import nn
@@ -11,6 +9,7 @@ from torch.utils.data import DataLoader
 from dataset import DHF1KDataset
 from loss import VideoSaliencyLoss
 from model import VideoSaliencyModel
+from utils import load_model_to_device
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data_path',
@@ -18,6 +17,7 @@ parser.add_argument('--train_data_path',
                     type=str,
                     help='path to training data')
 parser.add_argument('--output_path', default='./result', type=str, help='path for output files')
+parser.add_argument('--load_weight_file', default='', type=str, help='path to pretrained model state dict file')
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
     # set constants
     file_weight = './S3D_kinetics400.pt'
     len_temporal = 8
-    batch_size = 4
+    batch_size = 3
     epochs = 20
 
     # set input and output path strings
@@ -42,48 +42,46 @@ def main():
     train_dataset = DHF1KDataset(path_input, len_temporal)
 
     # load the weight file for encoder network
-    if os.path.isfile(file_weight):
-        print('loading weight file')
-        weight_dict = torch.load(file_weight)
-        model_dict = model.encoder.state_dict()
-        for name, param in weight_dict.items():
-            if 'module' in name:
-                name = '.'.join(name.split('.')[1:])
-            if 'base.' in name:
-                bn = int(name.split('.')[1])
-                sn_list = [0, 5, 8, 14]
-                sn = sn_list[0]
-                if sn_list[1] <= bn < sn_list[2]:
-                    sn = sn_list[1]
-                elif sn_list[2] <= bn < sn_list[3]:
-                    sn = sn_list[2]
-                elif bn >= sn_list[3]:
-                    sn = sn_list[3]
-                name = '.'.join(name.split('.')[2:])
-                name = 'base%d.%d.' % (sn_list.index(sn) + 1, bn - sn) + name
-            if name in model_dict:
-                if param.size() == model_dict[name].size():
-                    model_dict[name].copy_(param)
-                else:
-                    print(' size? ' + name, param.size(), model_dict[name].size())
-            else:
-                print(' name? ' + name)
+    if not os.path.isfile(file_weight):
+        print('Invalid weight file for encoder network.')
 
-        print(' loaded')
-        model.encoder.load_state_dict(model_dict)
-    else:
-        print('weight file?')
+    print(f'Loading encoder network weights from {file_weight}...')
+    weight_dict = torch.load(file_weight)
+    model_dict = model.encoder.state_dict()
+    for name, param in weight_dict.items():
+        if 'module' in name:
+            name = '.'.join(name.split('.')[1:])
+        if 'base.' in name:
+            bn = int(name.split('.')[1])
+            sn_list = [0, 5, 8, 14]
+            sn = sn_list[0]
+            if sn_list[1] <= bn < sn_list[2]:
+                sn = sn_list[1]
+            elif sn_list[2] <= bn < sn_list[3]:
+                sn = sn_list[2]
+            elif bn >= sn_list[3]:
+                sn = sn_list[3]
+            name = '.'.join(name.split('.')[2:])
+            name = 'base%d.%d.' % (sn_list.index(sn) + 1, bn - sn) + name
+        if name in model_dict:
+            if param.size() == model_dict[name].size():
+                model_dict[name].copy_(param)
+            else:
+                print(' size? ' + name, param.size(), model_dict[name].size())
+        else:
+            print(' name? ' + name)
+
+    model.encoder.load_state_dict(model_dict)
+    print(' Encoder network weights loaded!')
+
+    # load the weight file for decoder network
+    if not args.load_weight_file == '':
+        print(f'\nLoading decoder network weights from {args.load_weight_file}...')
+        model.load_state_dict(torch.load(args.load_weight_file))
+        print(' Decoder network weights loaded!')
 
     # load model to GPU
-    if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
-        print('CUDA is not available on your device or no compatible GPUs were found.')
-        device = torch.device('cpu')
-    else:
-        device = torch.device('cuda')
-    if torch.cuda.device_count() > 1:
-        model = nn.DataParallel(model)
-    model.to(device)
-    print('Successfully loaded the model to GPU!')
+    model, device = load_model_to_device(model)
 
     # set parameters for training
     params = []
@@ -97,6 +95,7 @@ def main():
     criterion = VideoSaliencyLoss()
 
     # train the model
+    print('\nStarting training...')
     model.train()
     loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
@@ -127,7 +126,7 @@ def main():
             avg_sim += loss_sim.item()
             avg_nss += loss_nss.item()
 
-        print(f'epoch: {i + 1}\n'
+        print(f'\nepoch: {i + 1}\n'
               f'loss: {(avg_loss / len(loader)):.3f}\n'
               f'SIM: {(avg_sim / len(loader)):.3f}\n'
               f'AUC: {(avg_auc / len(loader)):.3f}\n'
@@ -137,33 +136,6 @@ def main():
 
         weights_file = f'model_weights{(i + 1):03}.pt'
         torch.save(model.state_dict(), os.path.join('weights', weights_file))
-
-
-    # i, step = 0, 0
-    # loss_sum = 0
-    # start_time = time.time()
-    #
-    # for clip, annotation in islice(loader, epochs):
-    #     with torch.set_grad_enabled(True):
-    #         output = model(clip.cuda())
-    #         print(f'output: {output.shape}, gt: {annotation.shape}')
-    #         loss = criterion(output, annotation.cuda())
-    #
-    #     loss_sum += loss.detach().item()
-    #     loss.backward()
-    #     optimizer.step()
-    #     # optimizer.zero_grad()
-    #
-    #     if (i + 1) % 10 == 0:
-    #         step += 1
-    #         print(f'iteration: [{step}/{epochs}], loss: {loss_sum / 10}, '
-    #               f'time: {timedelta(seconds=int(time.time() - start_time))}', flush=True)
-    #         loss_sum = 0
-    #
-    #         if step % 10 == 0:
-    #             torch.save(model.state_dict(), os.path.join(path_output, f'iter{step:03}.pt'))
-    #
-    #     i += 1
 
 
 if __name__ == '__main__':
