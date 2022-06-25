@@ -23,7 +23,6 @@ def main():
 
     # set constants
     len_temporal = 8
-    batch_size = 3
 
     # set input and output path strings
     file_weight = args.weight_file
@@ -68,15 +67,15 @@ def main():
 
                 process_image(model, device, clip, data_name, list_frames[i], path_output, img_size)
 
-                # process first (len_temporal-1) frames
+                # process first (len_temporal - 1) frames
                 if i < 2 * len_temporal - 2:
                     process_image(
                         model,
+                        device,
                         torch.flip(clip, [2]),
-                        path_input,
                         data_name,
                         list_frames[i - len_temporal + 1],
-                        args,
+                        path_output,
                         img_size
                     )
 
