@@ -72,7 +72,6 @@ def save_image(tensor, save_path,
     :type scale_each: bool
     :return: None
     """
-
     grid = utils.make_grid(
         tensor,
         nrow=n_row,

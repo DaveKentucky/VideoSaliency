@@ -3,7 +3,6 @@ import os
 import time
 
 import torch
-from torch import nn
 from torch.utils.data import DataLoader
 
 from dataset import DHF1KDataset
@@ -16,23 +15,23 @@ parser.add_argument('--train_data_path',
                     default='E:/szkolne/praca_magisterska/ACLNet-Pytorch/train',
                     type=str,
                     help='path to training data')
-parser.add_argument('--output_path', default='./result', type=str, help='path for output files')
-parser.add_argument('--load_weight_file', default='', type=str, help='path to pretrained model state dict file')
+parser.add_argument('--output_path', default='result', type=str, help='path for output files')
+parser.add_argument('--S3D_weights_file', default='S3D_kinetics400.pt', type=str, help='path to S3D network weights file')
+parser.add_argument('--model_weights_file', default='', type=str, help='path to full model weights file')
 
 
 def main():
     args = parser.parse_args()
 
     # set constants
-    file_weight = './S3D_kinetics400.pt'
-    len_temporal = 8
-    batch_size = 3
+    len_temporal = 8    # number of frames in operated clip
+    batch_size = 3      # number of samples operated by the model at once
     epochs = 20
 
     # set input and output path strings
     path_input = args.train_data_path
     path_output = args.output_path
-    path_output = os.path.join(path_output, time.strftime("%m-%d_%H-%M-%S"))
+    # path_output = os.path.join(path_output, time.strftime("%m-%d_%H-%M-%S"))
     if not os.path.isdir(path_output):
         os.makedirs(path_output)
 
@@ -42,6 +41,7 @@ def main():
     train_dataset = DHF1KDataset(path_input, len_temporal)
 
     # load the weight file for encoder network
+    file_weight = args.S3D_weights_file
     if not os.path.isfile(file_weight):
         print('Invalid weight file for encoder network.')
 
@@ -75,9 +75,10 @@ def main():
     print(' Encoder network weights loaded!')
 
     # load the weight file for decoder network
-    if not args.load_weight_file == '':
-        print(f'\nLoading decoder network weights from {args.load_weight_file}...')
-        model.load_state_dict(torch.load(args.load_weight_file))
+    file_weight_check = args.model_weights_file
+    if not file_weight_check == '':
+        print(f'\nLoading decoder network weights from {file_weight_check}...')
+        model.load_state_dict(torch.load(file_weight_check))
         print(' Decoder network weights loaded!')
 
     # load model to GPU
@@ -105,6 +106,7 @@ def main():
 
     for i in range(epochs):
         for (idx, sample) in enumerate(loader):
+            print(f' Processing sample {idx + 1}...')
             clips = sample[0]
             annotations = sample[1]
             fixations = sample[2]
@@ -134,7 +136,7 @@ def main():
               f'total time: {((time.time() - start_time) / 60):.2f} minutes')
         avg_loss = 0
 
-        weights_file = f'model_weights{(i + 1):03}.pt'
+        weights_file = f'model_weights{(1 + (i if file_weight_check == "" else int(file_weight_check.split(".")[0][-3:]))):03}.pt'
         torch.save(model.state_dict(), os.path.join('weights', weights_file))
 
 

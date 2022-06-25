@@ -7,7 +7,7 @@ from torchvision import transforms
 from PIL import Image
 from scipy.io import loadmat
 
-from utils import transform_torch_image
+from utils import torch_transform_image
 
 
 def resize_fixation(fixation, width=384, height=224):
@@ -73,7 +73,7 @@ class DHF1KDataset(Dataset):
             fixation = loadmat(os.path.join(path_fixation, f'{(start_idx + i + 1):04}.mat'))['I']
             fixation = resize_fixation(fixation)
 
-            clip_img.append(transform_torch_image(img))
+            clip_img.append(torch_transform_image(img))
             clip_annotation.append(torch.FloatTensor(annotation))
             clip_fixation.append(torch.from_numpy(fixation.copy()))
 
