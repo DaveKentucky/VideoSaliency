@@ -406,28 +406,35 @@ class DecoderConv(nn.Module):
         )
 
         self.conv2 = nn.Sequential(
-            nn.Conv3d(832, 480, kernel_size=(3, 3, 3), stride=(3, 1, 1), padding=(0, 1, 1), bias=False),
+            SepConv3d(832, 480, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(480, 480, kernel_size=(1, 1, 1), stride=(3, 1, 1)),
             nn.ReLU(),
+            # nn.Conv3d(832, 480, kernel_size=(3, 3, 3), stride=(3, 1, 1), padding=(0, 1, 1), bias=False),
+            # nn.ReLU(),
             self.upsampling
         )
 
         self.conv3 = nn.Sequential(
-            nn.Conv3d(480, 192, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
+            SepConv3d(480, 192, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(192, 192, kernel_size=(1, 1, 1), stride=(5, 1, 1)),
             nn.ReLU(),
+            # nn.Conv3d(480, 192, kernel_size=(5, 3, 3), stride=(5, 1, 1), padding=(0, 1, 1), bias=False),
+            # nn.ReLU(),
             self.upsampling
         )
 
         self.conv4 = nn.Sequential(
-            nn.Conv3d(192, 64, kernel_size=(5, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),
+            SepConv3d(192, 64, kernel_size=3, stride=1, padding=1),
+            nn.Conv3d(64, 64, kernel_size=(1, 1, 1), stride=(5, 1, 1)),
             nn.ReLU(),
-            self.upsampling,
-
-            nn.Conv3d(64, 32, kernel_size=(1, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1), bias=False),
-            nn.ReLU(),
-            self.upsampling,
-
-            # nn.Conv3d(32, 32, kernel_size=(2, 1, 1), stride=(2, 1, 1), bias=False),
+            # nn.Conv3d(192, 64, kernel_size=(5, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),
             # nn.ReLU(),
+            self.upsampling,
+
+            nn.Conv3d(64, 32, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            self.upsampling,
+
             nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1), bias=True),
             nn.Sigmoid()
         )
