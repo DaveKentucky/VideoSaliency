@@ -136,7 +136,7 @@ def main():
               f'total time: {((time.time() - start_time) / 60):.2f} minutes')
         avg_loss = 0
 
-        weights_file = f'model_weights{(1 + (i if file_weight_check == "" else int(file_weight_check.split(".")[0][-3:]))):03}.pt'
+        weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[0][-3:]))):03}.pt'
         torch.save(model.state_dict(), os.path.join('weights', weights_file))
 
 
