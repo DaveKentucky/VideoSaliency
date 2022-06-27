@@ -56,7 +56,6 @@ class S3D(nn.Module):
         )
 
     def forward(self, x):
-        # x = x.permute(0, 2, 1, 3, 4)
         # print('input', x.shape)
         y3 = self.base1(x)
         # print('base1', y3.shape)
@@ -79,7 +78,7 @@ class S3D(nn.Module):
 
         y0 = self.base4(y)
         # print('base4', y0.shape)
-
+        #
         return [y0, y1, y2, y3]
 
 
@@ -431,10 +430,12 @@ class DecoderConv(nn.Module):
             # nn.ReLU(),
             self.upsampling,
 
-            nn.Conv3d(64, 32, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),
+            nn.Conv3d(64, 32, kernel_size=(2, 3, 3), stride=(2, 1, 1), padding=(0, 1, 1), bias=False),
             nn.ReLU(),
             self.upsampling,
 
+            nn.Conv3d(32, 32, kernel_size=(2, 1, 1), stride=(2, 1, 1), bias=False),
+            nn.ReLU(),
             nn.Conv3d(32, 1, kernel_size=(1, 1, 1), stride=(1, 1, 1), bias=True),
             nn.Sigmoid()
         )

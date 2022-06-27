@@ -102,7 +102,7 @@ def main():
 
     start_time = time.time()
 
-    avg_loss, avg_auc, avg_sim, avg_nss = 0, 0, 0, 0
+    avg_loss, avg_sim, avg_nss = 0, 0, 0
 
     for i in range(epochs):
         for (idx, sample) in enumerate(loader):
@@ -120,25 +120,40 @@ def main():
             # print(annotations.size())
             assert prediction.size() == annotations.size()
 
-            loss, loss_auc, loss_sim, loss_nss = criterion(prediction, annotations, fixations)
-            # loss.backward()
+            loss, loss_sim, loss_nss = criterion(prediction, annotations, fixations)
+            loss.backward()
             optimizer.step()
             avg_loss += loss.item()
-            avg_auc += loss_auc.item()
+            # avg_auc += loss_auc.item()
             avg_sim += loss_sim.item()
             avg_nss += loss_nss.item()
 
         print(f'\nepoch: {i + 1}\n'
               f'loss: {(avg_loss / len(loader)):.3f}\n'
               f'SIM: {(avg_sim / len(loader)):.3f}\n'
-              f'AUC: {(avg_auc / len(loader)):.3f}\n'
+              # f'AUC: {(avg_auc / len(loader)):.3f}\n'
               f'NSS: {(avg_nss / len(loader)):.3f}\n'
               f'total time: {((time.time() - start_time) / 60):.2f} minutes')
-        avg_loss = 0
+        avg_loss, avg_sim, avg_nss = 0, 0, 0
 
         weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[0][-3:]))):03}.pt'
         torch.save(model.state_dict(), os.path.join('weights', weights_file))
 
 
 if __name__ == '__main__':
+    # import cv2 as cv
+    # import numpy as np
+    # train_dataset = DHF1KDataset('E:/szkolne/praca_magisterska/ACLNet-Pytorch/train', 1)
+    # loader = DataLoader(train_dataset, batch_size=1, shuffle=False)
+    # for sample in loader:
+    #     clip = sample[0]
+    #     annt = sample[1]
+    #     clip = clip.permute(0, 1, 3, 4, 2)
+    #     clip = clip[0, 0, :, :, :].cpu().detach().numpy()
+    #     annt = annt.permute(1, 2, 0)
+    #     annt = annt.cpu().detach().numpy()
+    #     annt = cv.cvtColor(annt, cv.COLOR_GRAY2BGR)
+    #     images = np.concatenate((clip, annt), axis=1)
+    #     cv.imshow("image", images)
+    #     cv.waitKey(0)
     main()
