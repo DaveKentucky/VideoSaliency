@@ -396,7 +396,7 @@ class Mixed5c(nn.Module):
 class DecoderConv(nn.Module):
     def __init__(self):
         super(DecoderConv, self).__init__()
-        self.upsampling = nn.Upsample(scale_factor=(1, 2, 2))
+        self.upsampling = nn.Upsample(scale_factor=(1, 2, 2), mode='trilinear')
 
         self.conv1 = nn.Sequential(
             nn.Conv3d(1024, 832, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1), bias=False),

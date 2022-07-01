@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import numpy as np
 import time
 from cv2.cv2 import resize
@@ -60,7 +61,7 @@ class VideoSaliencyLoss(nn.Module):
         loss_sim = self.similarity(pred, gt).cpu()
         loss_nss = self.nss(pred, fix).cpu()
         loss = torch.FloatTensor([0.0]).cpu()
-        loss += loss_sim + loss_nss
+        loss += loss_sim - loss_nss
         return loss, loss_sim, loss_nss
 
     def similarity(self, pred, gt):
