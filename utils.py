@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision import transforms, utils
 from PIL import Image
+import cv2 as cv
 
 
 def load_model_to_device(model):
@@ -47,6 +48,12 @@ def torch_transform_image(img):
     ])
     img = transform(img)
     return img
+
+
+def blur(img):
+    k_size = 11
+    blurred = cv.GaussianBlur(img, (k_size, k_size), 0)
+    return torch.FloatTensor(blurred)
 
 
 def save_image(tensor, save_path,

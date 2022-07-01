@@ -41,18 +41,28 @@ def resize_fixation(fixation, width=384, height=224):
 
 
 class DHF1KDataset(Dataset):
-    def __init__(self, path, len_snippet):
+    def __init__(self, path, len_snippet, mode='train'):
         self.path = path
         self.len_snippet = len_snippet
-        self.video_names = os.listdir(path)
-        self.list_num_frame = [len(os.listdir(os.path.join(path, d, 'images'))) for d in self.video_names]
+        self.mode = mode
+        if self.mode == 'train':
+            self.video_names = os.listdir(path)
+            self.list_num_frame = [len(os.listdir(os.path.join(path, d, 'images'))) for d in self.video_names]
+        elif self.mode == 'validate':
+            self.list_num_frame = []
+            for v in os.listdir(path):
+                for i in range(0, len(os.listdir(os.path.join(path, v, 'images'))) - self.len_snippet, 4 * self.len_snippet):
+                    self.list_num_frame.append((v, i))
 
     def __len__(self):
         return len(self.list_num_frame)
 
     def __getitem__(self, idx):
-        file_name = self.video_names[idx]
-        start_idx = np.random.randint(0, self.list_num_frame[idx] - self.len_snippet + 1)
+        if self.mode == 'train':
+            file_name = self.video_names[idx]
+            start_idx = np.random.randint(0, self.list_num_frame[idx] - self.len_snippet + 1)
+        elif self.mode == 'validate':
+            file_name, start_idx = self.list_num_frame[idx]
 
         path_clip = os.path.join(self.path, file_name, 'images')
         path_annotation = os.path.join(self.path, file_name, 'maps')

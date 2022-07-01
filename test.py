@@ -7,7 +7,7 @@ from PIL import Image
 import cv2 as cv
 
 from model import VideoSaliencyModel
-from utils import load_model_to_device, torch_transform_image, save_image
+from utils import load_model_to_device, torch_transform_image, save_image, blur
 
 parser = argparse.ArgumentParser()
 parser.add_argument('weight_file', default='', type=str, help='path to pretrained model state dict file')
@@ -80,12 +80,6 @@ def main():
                     )
 
                 del snippet[0]
-
-
-def blur(img):
-    k_size = 11
-    blurred = cv.GaussianBlur(img, (k_size, k_size), 0)
-    return torch.FloatTensor(blurred)
 
 
 def process_image(model, device, clip, data_name, frame_no, save_path, img_size):

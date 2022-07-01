@@ -8,13 +8,18 @@ from torch.utils.data import DataLoader
 from dataset import DHF1KDataset
 from loss import VideoSaliencyLoss
 from model import VideoSaliencyModel
-from utils import load_model_to_device
+from utils import load_model_to_device, blur
+import cv2 as cv
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data_path',
                     default='E:/szkolne/praca_magisterska/ACLNet-Pytorch/train',
                     type=str,
                     help='path to training data')
+parser.add_argument('--validation_data_path',
+                    default='E:/szkolne/praca_magisterska/ACLNet-Pytorch/validation',
+                    type=str,
+                    help='path to validation data')
 parser.add_argument('--output_path', default='result', type=str, help='path for output files')
 parser.add_argument('--S3D_weights_file', default='S3D_kinetics400.pt', type=str, help='path to S3D network weights file')
 parser.add_argument('--model_weights_file', default='', type=str, help='path to full model weights file')
@@ -29,7 +34,8 @@ def main():
     epochs = 20
 
     # set input and output path strings
-    path_input = args.train_data_path
+    path_train = args.train_data_path
+    path_validate = args.validation_data_path
     path_output = args.output_path
     # path_output = os.path.join(path_output, time.strftime("%m-%d_%H-%M-%S"))
     if not os.path.isdir(path_output):
@@ -38,7 +44,8 @@ def main():
     model = VideoSaliencyModel()
 
     # load dataset
-    train_dataset = DHF1KDataset(path_input, len_temporal)
+    train_dataset = DHF1KDataset(path_train, len_temporal)
+    validation_dataset = DHF1KDataset(path_validate, len_temporal, mode='validate')
 
     # load the weight file for encoder network
     file_weight = args.S3D_weights_file
@@ -95,49 +102,96 @@ def main():
     optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=2e-7)
     criterion = VideoSaliencyLoss()
 
-    # train the model
-    print('\nStarting training...')
-    model.train()
-    loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    start_time = time.time()
-
-    avg_loss, avg_sim, avg_nss = 0, 0, 0
+    # create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(validation_dataset, batch_size=1, shuffle=False)
 
     for i in range(epochs):
-        for (idx, sample) in enumerate(loader):
-            print(f' Processing sample {idx + 1}...')
-            clips = sample[0]
-            annotations = sample[1]
-            fixations = sample[2]
-            clips = clips.to(device)
-            clips = clips.permute((0, 2, 1, 3, 4))
-            annotations = annotations.to(device)
-            optimizer.zero_grad()
-
-            prediction = model(clips)
-            # print(prediction.size())
-            # print(annotations.size())
-            assert prediction.size() == annotations.size()
-
-            loss, loss_sim, loss_nss = criterion(prediction, annotations, fixations)
-            loss.backward()
-            optimizer.step()
-            avg_loss += loss.item()
-            # avg_auc += loss_auc.item()
-            avg_sim += loss_sim.item()
-            avg_nss += loss_nss.item()
-
-        print(f'\nepoch: {i + 1}\n'
-              f'loss: {(avg_loss / len(loader)):.3f}\n'
-              f'SIM: {(avg_sim / len(loader)):.3f}\n'
-              # f'AUC: {(avg_auc / len(loader)):.3f}\n'
-              f'NSS: {(avg_nss / len(loader)):.3f}\n'
-              f'total time: {((time.time() - start_time) / 60):.2f} minutes')
-        avg_loss, avg_sim, avg_nss = 0, 0, 0
+        # train the model
+        loss, sim, nss = train(model, train_loader, optimizer, criterion, i + 1, device)
 
         weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[0][-3:]))):03}.pt'
         torch.save(model.state_dict(), os.path.join('weights', weights_file))
+
+
+def train(model, loader, optimizer, criterion, epoch, device):
+    print(f'\nStarting training model at epoch {epoch}')
+    model.train()
+    start_time = time.time()
+    avg_loss, avg_sim, avg_nss = 0, 0, 0
+
+    for (idx, sample) in enumerate(loader):
+        clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=True)
+        optimizer.zero_grad()
+
+        prediction = model(clips)
+        # print(prediction.size())
+        # print(gt.size())
+        assert prediction.size() == gt.size()
+
+        loss, loss_sim, loss_nss = criterion(prediction, gt, fixations)
+        loss.backward()
+        optimizer.step()
+        print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
+        avg_loss += loss.item()
+        # avg_auc += loss_auc.item()
+        avg_sim += loss_sim.item()
+        avg_nss += loss_nss.item()
+
+    print(f'\nepoch: {epoch}\n'
+          f'loss: {(avg_loss / len(loader)):.3f}\n'
+          f'SIM: {(avg_sim / len(loader)):.3f}\n'
+          # f'AUC: {(avg_auc / len(loader)):.3f}\n'
+          f'NSS: {(avg_nss / len(loader)):.3f}\n'
+          f'training time: {((time.time() - start_time) / 60):.2f} minutes')
+    return avg_loss, avg_sim, avg_nss
+
+
+def validate(model, loader, criterion, epoch, device):
+    print(f'\nStarting validating model at epoch {epoch}')
+    model.eval()
+    start_time = time.time()
+    avg_loss, avg_sim, avg_nss = 0, 0, 0
+
+    for (idx, sample) in enumerate(loader):
+        clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=False)
+
+        prediction = model(clips)
+        gt = gt.squeeze(0).numpy()
+        prediction = prediction.cpu().squeeze(0).numpy()
+        prediction = cv.resize(prediction, (gt.shape[1], gt.shape[0]))
+        prediction = blur(prediction).unsqueeze(0).cuda()
+        gt = torch.FloatTensor(gt).unsqueeze(0).cuda()
+        # print(prediction.size())
+        # print(gt.size())
+        assert prediction.size() == gt.size()
+
+        loss, loss_sim, loss_nss = criterion(prediction, gt, fixations)
+        print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
+        avg_loss += loss.item()
+        # avg_auc += loss_auc.item()
+        avg_sim += loss_sim.item()
+        avg_nss += loss_nss.item()
+
+    print(f'\nepoch: {epoch}\n'
+          f'loss: {(avg_loss / len(loader)):.3f}\n'
+          f'SIM: {(avg_sim / len(loader)):.3f}\n'
+          # f'AUC: {(avg_auc / len(loader)):.3f}\n'
+          f'NSS: {(avg_nss / len(loader)):.3f}\n'
+          f'validation time: {((time.time() - start_time) / 60):.2f} minutes')
+    return avg_loss, avg_sim, avg_nss
+
+
+def prepare_sample(idx, sample, device, gt_to_device):
+    print(f' Processing sample {idx}...')
+    clips = sample[0]
+    gt = sample[1]
+    fixations = sample[2]
+    clips = clips.to(device)
+    clips = clips.permute((0, 2, 1, 3, 4))
+    if gt_to_device:
+        gt.to(device)
+    return clips, gt, fixations
 
 
 if __name__ == '__main__':
