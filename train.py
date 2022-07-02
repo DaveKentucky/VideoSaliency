@@ -24,6 +24,7 @@ parser.add_argument('--validation_data_path',
 parser.add_argument('--output_path', default='result', type=str, help='path for output files')
 parser.add_argument('--S3D_weights_file', default='S3D_kinetics400.pt', type=str, help='path to S3D network weights file')
 parser.add_argument('--model_weights_file', default='', type=str, help='path to full model weights file')
+parser.add_argument('--loss_file', default='loss.npy', type=str, help='path to numpy file with loss values')
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
     path_train = args.train_data_path
     path_validate = args.validation_data_path
     path_output = args.output_path
+    path_loss = args.loss_file
     # path_output = os.path.join(path_output, time.strftime("%m-%d_%H-%M-%S"))
     if not os.path.isdir(path_output):
         os.makedirs(path_output)
@@ -120,21 +122,22 @@ def main():
         if loss_val[0] <= best_loss:
             best_loss = loss_val[0]
             # save the model
-            weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[0][-3:]))):03}.pt'
+            weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[-2][-3:]))):03}.pt'
             torch.save(model.state_dict(), os.path.join('weights', weights_file))
 
-        np.save('loss.npy', results[0:i + 1])
+        save_loss(results[0:i+1], path_loss)
 
 
 def train(model, loader, optimizer, criterion, epoch, device):
-    print(f'\nStarting training model at epoch {epoch}')
+    print(f'\nStarting training model at epoch {epoch}\n')
     model.train()
     start_time = time.time()
     loss_sum, sim_sum, nss_sum, auc_sum = 0, 0, 0, 0
     num_samples = len(loader)
 
     for (idx, sample) in enumerate(loader):
-        clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=True)
+        print(f' TRAIN: Processing sample {idx + 1}...')
+        clips, gt, fixations = prepare_sample(sample, device, gt_to_device=True)
         optimizer.zero_grad()
 
         prediction = model(clips)
@@ -145,7 +148,7 @@ def train(model, loader, optimizer, criterion, epoch, device):
         loss, loss_sim, loss_nss = criterion(prediction, gt, fixations)
         loss.backward()
         optimizer.step()
-        print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
+        print(f'   loss: {loss.item():.3f}, SIM: {loss_sim:.3f}, NSS: {loss_nss:.3f}')
         loss_sum += loss.item()
         # auc_sum += loss_auc.item()
         sim_sum += loss_sim.item()
@@ -173,7 +176,8 @@ def validate(model, loader, criterion, epoch, device):
         num_samples = len(loader)
 
         for (idx, sample) in enumerate(loader):
-            clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=False)
+            print(f' VAL: Processing sample {idx + 1}...')
+            clips, gt, fixations = prepare_sample(sample, device, gt_to_device=False)
 
             prediction = model(clips)
             gt = gt.squeeze(0).numpy()
@@ -186,7 +190,7 @@ def validate(model, loader, criterion, epoch, device):
             assert prediction.size() == gt.size()
 
             loss, loss_sim, loss_nss = criterion(prediction, gt, fixations)
-            print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
+            print(f'   loss: {loss.item():.3f}, SIM: {loss_sim:.3f}, NSS: {loss_nss:.3f}')
             loss_sum += loss.item()
             # auc_sum += loss_auc.item()
             sim_sum += loss_sim.item()
@@ -205,8 +209,7 @@ def validate(model, loader, criterion, epoch, device):
         return avg_loss, avg_sim, avg_nss
 
 
-def prepare_sample(idx, sample, device, gt_to_device):
-    print(f' Processing sample {idx}...')
+def prepare_sample(sample, device, gt_to_device):
     clips = sample[0]
     gt = sample[1]
     fixations = sample[2]
@@ -215,6 +218,14 @@ def prepare_sample(idx, sample, device, gt_to_device):
     if gt_to_device:
         gt.to(device)
     return clips, gt, fixations
+
+
+def save_loss(loss_arr, filename):
+    if os.path.isfile(filename):
+        arr = np.load(filename)
+        loss_arr = np.concatenate((arr, loss_arr), axis=0)
+
+    np.save('loss.npy', loss_arr)
 
 
 if __name__ == '__main__':
