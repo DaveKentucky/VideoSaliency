@@ -51,6 +51,14 @@ def torch_transform_image(img):
 
 
 def blur(img):
+    """
+    Blurs image with gaussian blurring algorithm.
+
+    :param img: input image
+    :type img: numpy.ndarray
+    :return: blurred image
+    :rtype: numpy.ndarray
+    """
     k_size = 11
     blurred = cv.GaussianBlur(img, (k_size, k_size), 0)
     return torch.FloatTensor(blurred)

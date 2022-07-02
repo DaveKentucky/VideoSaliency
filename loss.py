@@ -75,6 +75,9 @@ class VideoSaliencyLoss(nn.Module):
         :return: SIM measure value
         :rtype: torch.Tensor
         """
+        pred = pred.cuda()
+        gt = gt.cuda()
+
         batch_size = pred.size(0)
         w = pred.size(1)
         h = pred.size(2)
@@ -98,6 +101,7 @@ class VideoSaliencyLoss(nn.Module):
     def auc_Judd(self, pred, fix, show_plot=False):
         """
         Calculates Area Under the Curve measure (AUC) following T. Judd's implementation.
+
         :param pred: predicted saliency map
         :type pred: torch.Tensor
         :param fix: fixation map
