@@ -10,6 +10,7 @@ from loss import VideoSaliencyLoss
 from model import VideoSaliencyModel
 from utils import load_model_to_device, blur
 import cv2 as cv
+import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data_path',
@@ -106,19 +107,31 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(validation_dataset, batch_size=1, shuffle=False)
 
+    results = np.empty((epochs, 3))
+    best_loss = np.inf
     for i in range(epochs):
         # train the model
-        loss, sim, nss = train(model, train_loader, optimizer, criterion, i + 1, device)
+        loss_train = train(model, train_loader, optimizer, criterion, i + 1, device)
 
-        weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[0][-3:]))):03}.pt'
-        torch.save(model.state_dict(), os.path.join('weights', weights_file))
+        # validate the model
+        loss_val = validate(model, val_loader, criterion, i + 1, device)
+        results[i] = np.asarray(loss_val)
+
+        if loss_val[0] <= best_loss:
+            best_loss = loss_val[0]
+            # save the model
+            weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[0][-3:]))):03}.pt'
+            torch.save(model.state_dict(), os.path.join('weights', weights_file))
+
+        np.save('loss.npy', results[0:i + 1])
 
 
 def train(model, loader, optimizer, criterion, epoch, device):
     print(f'\nStarting training model at epoch {epoch}')
     model.train()
     start_time = time.time()
-    avg_loss, avg_sim, avg_nss = 0, 0, 0
+    loss_sum, sim_sum, nss_sum, auc_sum = 0, 0, 0, 0
+    num_samples = len(loader)
 
     for (idx, sample) in enumerate(loader):
         clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=True)
@@ -133,53 +146,63 @@ def train(model, loader, optimizer, criterion, epoch, device):
         loss.backward()
         optimizer.step()
         print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
-        avg_loss += loss.item()
-        # avg_auc += loss_auc.item()
-        avg_sim += loss_sim.item()
-        avg_nss += loss_nss.item()
+        loss_sum += loss.item()
+        # auc_sum += loss_auc.item()
+        sim_sum += loss_sim.item()
+        nss_sum += loss_nss.item()
 
+    avg_loss = loss_sum / num_samples
+    # avg_auc = auc_sum / num_samples
+    avg_sim = sim_sum / num_samples
+    avg_nss = nss_sum / num_samples
     print(f'\nepoch: {epoch}\n'
-          f'loss: {(avg_loss / len(loader)):.3f}\n'
-          f'SIM: {(avg_sim / len(loader)):.3f}\n'
-          # f'AUC: {(avg_auc / len(loader)):.3f}\n'
-          f'NSS: {(avg_nss / len(loader)):.3f}\n'
+          f'loss: {avg_loss:.3f}\n'
+          f'SIM: {avg_sim:.3f}\n'
+          # f'AUC: {avg_auc:.3f}\n'
+          f'NSS: {avg_nss:.3f}\n'
           f'training time: {((time.time() - start_time) / 60):.2f} minutes')
     return avg_loss, avg_sim, avg_nss
 
 
 def validate(model, loader, criterion, epoch, device):
     print(f'\nStarting validating model at epoch {epoch}')
-    model.eval()
-    start_time = time.time()
-    avg_loss, avg_sim, avg_nss = 0, 0, 0
+    with torch.no_grad():
+        model.eval()
+        start_time = time.time()
+        loss_sum, sim_sum, nss_sum, auc_sum = 0, 0, 0, 0
+        num_samples = len(loader)
 
-    for (idx, sample) in enumerate(loader):
-        clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=False)
+        for (idx, sample) in enumerate(loader):
+            clips, gt, fixations = prepare_sample(idx + 1, sample, device, gt_to_device=False)
 
-        prediction = model(clips)
-        gt = gt.squeeze(0).numpy()
-        prediction = prediction.cpu().squeeze(0).numpy()
-        prediction = cv.resize(prediction, (gt.shape[1], gt.shape[0]))
-        prediction = blur(prediction).unsqueeze(0).cuda()
-        gt = torch.FloatTensor(gt).unsqueeze(0).cuda()
-        # print(prediction.size())
-        # print(gt.size())
-        assert prediction.size() == gt.size()
+            prediction = model(clips)
+            gt = gt.squeeze(0).numpy()
+            prediction = prediction.cpu().squeeze(0).detach().numpy()
+            prediction = cv.resize(prediction, (gt.shape[1], gt.shape[0]))
+            prediction = blur(prediction).unsqueeze(0).cuda()
+            gt = torch.FloatTensor(gt).unsqueeze(0).cuda()
+            # print(prediction.size())
+            # print(gt.size())
+            assert prediction.size() == gt.size()
 
-        loss, loss_sim, loss_nss = criterion(prediction, gt, fixations)
-        print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
-        avg_loss += loss.item()
-        # avg_auc += loss_auc.item()
-        avg_sim += loss_sim.item()
-        avg_nss += loss_nss.item()
+            loss, loss_sim, loss_nss = criterion(prediction, gt, fixations)
+            print(f' loss: {loss.item()}, SIM: {loss_sim}, NSS: {loss_nss}')
+            loss_sum += loss.item()
+            # auc_sum += loss_auc.item()
+            sim_sum += loss_sim.item()
+            nss_sum += loss_nss.item()
 
-    print(f'\nepoch: {epoch}\n'
-          f'loss: {(avg_loss / len(loader)):.3f}\n'
-          f'SIM: {(avg_sim / len(loader)):.3f}\n'
-          # f'AUC: {(avg_auc / len(loader)):.3f}\n'
-          f'NSS: {(avg_nss / len(loader)):.3f}\n'
-          f'validation time: {((time.time() - start_time) / 60):.2f} minutes')
-    return avg_loss, avg_sim, avg_nss
+        avg_loss = loss_sum / num_samples
+        # avg_auc = auc_sum / num_samples
+        avg_sim = sim_sum / num_samples
+        avg_nss = nss_sum / num_samples
+        print(f'\nepoch: {epoch}\n'
+              f'loss: {avg_loss:.3f}\n'
+              f'SIM: {avg_sim:.3f}\n'
+              # f'AUC: {avg_auc:.3f}\n'
+              f'NSS: {avg_nss:.3f}\n'
+              f'validation time: {((time.time() - start_time) / 60):.2f} minutes')
+        return avg_loss, avg_sim, avg_nss
 
 
 def prepare_sample(idx, sample, device, gt_to_device):
