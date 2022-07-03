@@ -109,15 +109,13 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(validation_dataset, batch_size=1, shuffle=False)
 
-    results = np.empty((epochs, 3))
-    best_loss = np.inf
+    best_loss = get_best_loss(path_loss)
     for i in range(epochs):
         # train the model
         loss_train = train(model, train_loader, optimizer, criterion, i + 1, device)
 
         # validate the model
         loss_val = validate(model, val_loader, criterion, i + 1, device)
-        results[i] = np.asarray(loss_val)
 
         if loss_val[0] <= best_loss:
             best_loss = loss_val[0]
@@ -125,7 +123,7 @@ def main():
             weights_file = f'model_weights{(1 + (i if file_weight_check == "" else i + int(file_weight_check.split(".")[-2][-3:]))):03}.pt'
             torch.save(model.state_dict(), os.path.join('weights', weights_file))
 
-        save_loss(results[0:i+1], path_loss)
+        save_loss(np.asarray(loss_val), path_loss)
 
 
 def train(model, loader, optimizer, criterion, epoch, device):
@@ -221,11 +219,22 @@ def prepare_sample(sample, device, gt_to_device):
 
 
 def save_loss(loss_arr, filename):
+    size = loss_arr.shape[1]
+    loss_arr = np.reshape(loss_arr, (1, size))
     if os.path.isfile(filename):
         arr = np.load(filename)
         loss_arr = np.concatenate((arr, loss_arr), axis=0)
 
     np.save('loss.npy', loss_arr)
+
+
+def get_best_loss(filename):
+    if os.path.isfile(filename):
+        arr = np.load(filename)
+        best_loss = np.min(arr[:, 0])
+    else:
+        best_loss = np.inf
+    return best_loss
 
 
 if __name__ == '__main__':
