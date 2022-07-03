@@ -187,4 +187,6 @@ share/man/man1/ttx.1
 
 result
 weights
+ViNet/*.pt
+TASED_Net/*.pt
 *.npy

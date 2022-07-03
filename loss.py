@@ -41,8 +41,9 @@ def normalize_numpy(s_map):
 
 
 class VideoSaliencyLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, mode='train'):
         super(VideoSaliencyLoss, self).__init__()
+        self.mode = mode
 
     def forward(self, pred, gt, fix):
         """
@@ -57,11 +58,14 @@ class VideoSaliencyLoss(nn.Module):
         :return: loss metrics values (loss, SIM, NSS)
         :rtype: (torch.Tensor, torch.Tensor, torch.Tensor)
         """
-        # loss_auc = self.auc_Judd(pred, fix)
         loss_sim = self.similarity(pred, gt).cpu()
         loss_nss = self.nss(pred, fix).cpu()
         loss = torch.FloatTensor([0.0]).cpu()
         loss += loss_sim - loss_nss
+        if self.mode == 'evaluate':
+            loss_auc = self.auc_Judd(pred, fix)
+            loss_cc = self.cc(pred, gt)
+            return loss_sim, loss_nss, loss_auc, loss_cc
         return loss, loss_sim, loss_nss
 
     def similarity(self, pred, gt):
@@ -98,47 +102,47 @@ class VideoSaliencyLoss(nn.Module):
         gt = gt.view(batch_size, -1)
         return torch.mean(torch.sum(torch.min(pred, gt), -1))
 
-    def auc_Judd(self, pred, fix, show_plot=False):
+    def auc_Judd(self, pred, gt, show_plot=False):
         """
         Calculates Area Under the Curve measure (AUC) following T. Judd's implementation.
 
         :param pred: predicted saliency map
         :type pred: torch.Tensor
-        :param fix: fixation map
-        :type fix: torch.Tensor
+        :param gt: ground truth fixation map
+        :type gt: torch.Tensor
         :param show_plot: if the result curve should be plotted
         :type show_plot: bool
         :return: AUC-Judd measure value
         :rtype: float
         """
         pred = pred.cpu()
-        fix = fix.cpu()
+        gt = gt.cpu()
 
         # resize predicted saliency map if the sizes don't match
-        if pred.size() != fix.size():
+        if pred.size() != gt.size():
             pred = pred.squeeze(0).numpy()
-            pred = torch.FloatTensor(resize(pred, (fix.size(2), fix.size(1)))).unsqueeze(0)
+            pred = torch.FloatTensor(resize(pred, (gt.size(2), gt.size(1)))).unsqueeze(0)
 
         # get a single frame from video clip data
         if len(pred.size()) == 3:
             pred = pred[0, :, :]
-            fix = fix[0, :, :]
+            gt = gt[0, :, :]
 
         pred = pred.detach().numpy()
-        fix = fix.detach().numpy()
+        gt = gt.detach().numpy()
 
         # resize saliency map to fixation map size
-        if not np.shape(pred) == np.shape(fix):
-            pred = resize(pred, np.shape(fix))
+        if not np.shape(pred) == np.shape(gt):
+            pred = resize(pred, np.shape(gt))
 
         # normalize the saliency map
         pred = (pred - pred.min()) / (pred.max() - pred.min())
 
         # flatten the maps
         pred_flat = pred.flatten()
-        fix_flat = fix.flatten()
+        gt_flat = gt.flatten()
 
-        fixations = pred_flat[fix_flat > 0]
+        fixations = pred_flat[gt_flat > 0]
         num_fixations = len(fixations)
         num_pixels = len(pred_flat)
 
@@ -166,7 +170,7 @@ class VideoSaliencyLoss(nn.Module):
             ax = fig.add_subplot(1, 2, 1)
             ax.matshow(pred, cmap='gray')
             ax.set_title('Saliency map with fixations to be predicted')
-            [y, x] = np.nonzero(fix)
+            [y, x] = np.nonzero(gt)
             s = np.shape(pred)
             plt.axis((-.5, s[1] - .5, s[0] - .5, -.5))
             plt.plot(x, y, 'ro')
@@ -210,3 +214,34 @@ class VideoSaliencyLoss(nn.Module):
         pred = torch.sum((pred * gt).view(batch_size, -1), 1)
         count = torch.sum(gt.view(batch_size, -1), 1)
         return torch.mean(pred / count)
+
+    def cc(self, pred, gt):
+        """
+        Calculates Correlation Coefficient measure (CC).
+
+        :param pred: predicted saliency map
+        :type pred: torch.Tensor
+        :param gt: ground truth saliency map
+        :type gt: torch.Tensor
+        :return: NSS measure value
+        :rtype: torch.Tensor
+        """
+        assert pred.size() == gt.size()
+        batch_size = pred.size(0)
+        w = pred.size(1)
+        h = pred.size(2)
+
+        pred_mean = torch.mean(pred.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+        pred_std = torch.std(pred.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+
+        mean_gt = torch.mean(gt.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+        std_gt = torch.std(gt.view(batch_size, -1), 1).view(batch_size, 1, 1).expand(batch_size, w, h)
+
+        pred = (pred - pred_mean) / pred_std
+        gt = (gt - mean_gt) / std_gt
+
+        ab = torch.sum((pred * gt).view(batch_size, -1), 1)
+        aa = torch.sum((pred * pred).view(batch_size, -1), 1)
+        bb = torch.sum((gt * gt).view(batch_size, -1), 1)
+
+        return torch.mean(ab / (torch.sqrt(aa * bb)))

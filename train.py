@@ -219,7 +219,7 @@ def prepare_sample(sample, device, gt_to_device):
 
 
 def save_loss(loss_arr, filename):
-    size = loss_arr.shape[1]
+    size = loss_arr.shape[0]
     loss_arr = np.reshape(loss_arr, (1, size))
     if os.path.isfile(filename):
         arr = np.load(filename)
