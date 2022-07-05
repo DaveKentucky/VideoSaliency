@@ -225,7 +225,7 @@ def save_loss(loss_arr, filename):
         arr = np.load(filename)
         loss_arr = np.concatenate((arr, loss_arr), axis=0)
 
-    np.save('loss.npy', loss_arr)
+    np.save(filename, loss_arr)
 
 
 def get_best_loss(filename):
