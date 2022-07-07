@@ -5,7 +5,7 @@ import TASED_Net.model
 
 from torch.utils.data import DataLoader
 
-from dataset import DHF1KDataset
+from dataset import DHF1KDataset, UCFDataset
 from model import VideoSaliencyModel
 from train import prepare_sample
 from utils import *
@@ -15,6 +15,7 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument('model', type=str, help='Model that should be validated. (ViNet, TASED_Net, VideoSaliency)')
+parser.add_argument('dataset', type=str, help='Dataset used for validation. (DHF1K, UCF)')
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -58,15 +59,20 @@ def evaluate():
     elif model_name == 'VideoSaliency':
         len_temporal = 8
         model = VideoSaliencyModel()
-        model.load_state_dict(torch.load('VideoSaliency.pt'))
+        model.load_state_dict(torch.load('weights/model_weights019.pt'))
     else:
         print('Invalid model name.')
         return
 
-    path_data = 'E:/szkolne/praca_magisterska/ACLNet-Pytorch/validation'
+    path_data_DHF1K = 'E:/szkolne/praca_magisterska/ACLNet-Pytorch/validation'
+    path_data_UCF = 'E:/szkolne/praca_magisterska/DHF1K_dataset/testing'
 
     criterion = VideoSaliencyLoss(mode='evaluate')
-    validation_dataset = DHF1KDataset(path_data, len_temporal, mode='validate')
+    dataset_name = args.dataset
+    if dataset_name == 'DHF1K':
+        validation_dataset = DHF1KDataset(path_data_DHF1K, len_temporal, mode='validate')
+    elif dataset_name == 'UCF':
+        validation_dataset = UCFDataset(path_data_UCF, len_temporal, mode='validate')
     loader = DataLoader(validation_dataset, batch_size=1, shuffle=False)
 
     model = model.to(device)
