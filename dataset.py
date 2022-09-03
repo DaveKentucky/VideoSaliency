@@ -153,3 +153,58 @@ class UCFDataset(Dataset):
 
         # print(clip_img.shape)
         return clip_img, clip_annotation[-1], clip_fixation[-1]
+
+
+class GazeBaseDataset(Dataset):
+    def __init__(self, path, len_snippet):
+        self.path = path
+        self.len_snippet = len_snippet
+        self.list_num_frame = []
+        for v in os.listdir(path):
+            for i in range(0, len(os.listdir(os.path.join(path, v, 'images'))) - self.len_snippet, self.len_snippet):
+                self.list_num_frame.append((v, i))
+
+    def __len__(self):
+        return len(self.list_num_frame)
+
+    def __getitem__(self, idx):
+        file_name, start_idx = self.list_num_frame[idx]
+
+        path_clip = os.path.join(self.path, file_name, 'images')
+        path_annotation = os.path.join(self.path, file_name, 'maps')
+        path_fixation = os.path.join(self.path, file_name, 'fixations')
+        clip_img = []
+        clip_annotation = []
+        clip_fixation = []
+
+        list_clips = os.listdir(path_clip)[100:]
+        list_clips.sort()
+        list_sal_clips = os.listdir(path_annotation)[100:]
+        list_sal_clips.sort()
+        list_fix_clips = os.listdir(path_fixation)[100:]
+        list_fix_clips.sort()
+
+        for i in range(self.len_snippet):
+            img = Image.open(os.path.join(path_clip, list_clips[start_idx + i])).convert('RGB')
+
+            annotation = np.array(Image.open(os.path.join(path_annotation, list_sal_clips[start_idx+i])).convert('L'))
+            annotation = annotation.astype(float)
+            annotation = cv.resize(annotation, (384, 224))
+            if np.max(annotation) > 1.0:
+                annotation = annotation / 255.0
+
+            fixation = np.array(Image.open(os.path.join(path_fixation, list_fix_clips[start_idx+i])).convert('L'))
+            fixation = fixation.astype(float)
+            fixation = cv.resize(fixation, (384, 224))
+            if np.max(fixation) > 1.0:
+                fixation = fixation / 255.0
+
+            clip_img.append(torch_transform_image(img))
+            clip_annotation.append(torch.FloatTensor(annotation))
+            clip_fixation.append(torch.from_numpy(fixation.copy()))
+
+        clip_img = torch.FloatTensor(torch.stack(clip_img, dim=0))
+        clip_annotation = torch.FloatTensor(torch.stack(clip_annotation, dim=0))
+
+        # print(clip_img.shape)
+        return clip_img, clip_annotation[-1], clip_fixation[-1]

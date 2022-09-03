@@ -61,12 +61,16 @@ class VideoSaliencyLoss(nn.Module):
         loss_sim = self.similarity(pred, gt).cpu()
         loss_nss = self.nss(pred, fix).cpu()
         loss = torch.FloatTensor([0.0]).cpu()
-        loss += loss_sim - loss_nss
+        loss -= loss_sim
+        loss -= loss_nss
+        # loss = torch.FloatTensor([1.0]).cpu()
+        # loss -= loss_sim
         if self.mode == 'evaluate':
             loss_auc = self.auc_Judd(pred, fix)
             loss_cc = self.cc(pred, gt)
             return loss_sim, loss_nss, loss_auc, loss_cc
         return loss, loss_sim, loss_nss
+        # return loss, loss_sim
 
     def similarity(self, pred, gt):
         """

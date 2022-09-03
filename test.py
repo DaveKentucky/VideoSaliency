@@ -12,9 +12,9 @@ from utils import load_model_to_device, torch_transform_image, save_image, blur
 parser = argparse.ArgumentParser()
 parser.add_argument('weight_file', default='', type=str, help='path to pretrained model state dict file')
 parser.add_argument('--test_data_path',
-                    default='E:/szkolne/praca_magisterska/ACLNet-Pytorch/test',
+                    default='E:/szkolne/praca_magisterska/ACLNet-Pytorch/validation',
                     type=str,
-                    help='path to training data')
+                    help='path to testing data')
 parser.add_argument('--output_path', default='./result', type=str, help='path for output files')
 
 
@@ -46,6 +46,9 @@ def main():
         list_frames = [f for f in os.listdir(os.path.join(path_input, data_name, 'images')) if os.path.isfile(
             os.path.join(path_input, data_name, 'images', f)
         )]
+        # list_frames = [f for f in os.listdir(os.path.join(path_input, data_name)) if os.path.isfile(
+        #     os.path.join(path_input, data_name, f)
+        # )]
         list_frames.sort()
         os.makedirs(os.path.join(path_output, data_name), exist_ok=True)
 
@@ -56,6 +59,7 @@ def main():
         snippet = []
         for i in range(len(list_frames)):
             img = Image.open(os.path.join(path_input, data_name, 'images', list_frames[i])).convert('RGB')
+            # img = Image.open(os.path.join(path_input, data_name, list_frames[i])).convert('RGB')
             img_size = img.size
             img = torch_transform_image(img)
 
